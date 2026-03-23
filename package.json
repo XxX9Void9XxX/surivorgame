@@ -1,7 +1,7 @@
 {
-  "name": "base-defense-io",
+  "name": "surivorgame",
   "version": "1.0.0",
-  "description": "A multiplayer base defense game",
+  "description": "Multiplayer Base Defense",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -11,6 +11,6 @@
     "socket.io": "^4.7.2"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=18.0.0"
   }
 }
