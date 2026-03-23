@@ -1,129 +1,156 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Base Defense IO</title>
+    <title>Survivor Game IO</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #222; font-family: sans-serif; }
-        canvas { display: block; }
+        body { margin: 0; overflow: hidden; background: #333; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         #ui { position: absolute; top: 10px; left: 10px; color: white; pointer-events: none; }
-        .menu { position: absolute; background: rgba(0,0,0,0.8); color: white; padding: 20px; border-radius: 10px; display: none; pointer-events: auto; }
-        #start-menu { display: block; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
-        #team-menu { top: 70px; right: 20px; width: 200px; }
-        #upgrade-menu { top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; border: 2px solid #00ffcc; }
-        #top-bar { position: absolute; top: 20px; right: 20px; display: flex; gap: 10px; }
-        button { padding: 10px; cursor: pointer; font-weight: bold; }
+        #team-ui { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.7); color: white; padding: 10px; border-radius: 5px; pointer-events: auto; }
+        #start-screen { position: fixed; inset: 0; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 100; color: white; }
+        canvas { display: block; }
+        button { cursor: pointer; pointer-events: auto; }
     </style>
 </head>
 <body>
 
-<div id="start-menu" class="menu">
-    <h1>BASE DEFENSE IO</h1>
-    <input type="text" id="nameInput" placeholder="Enter Name" maxlength="10"><br><br>
-    <button onclick="startGame()">PLAY</button>
+<div id="start-screen">
+    <h1>SURVIVOR IO</h1>
+    <input type="text" id="nameInput" placeholder="Name">
+    <button onclick="join()">START</button>
 </div>
 
-<div id="top-bar" style="display:none;">
-    <button onclick="document.getElementById('team-menu').style.display='block'" style="background: #3366ff; color: white;">TEAM</button>
-    <button onclick="location.reload()" style="background: #ff3300; color: white;">HOME</button>
+<div id="ui">
+    <div id="stats">XP: 0 | Blocks: 0 | Towers: 0</div>
 </div>
 
-<div id="team-menu" class="menu">
-    <h3>Players</h3>
-    <div id="player-list"></div>
-    <button onclick="this.parentElement.style.display='none'">Close</button>
+<div id="team-ui">
+    <strong>Team Invites</strong>
+    <div id="invites"></div>
+    <hr>
+    <strong>Nearby Players</strong>
+    <div id="nearby"></div>
 </div>
 
-<div id="upgrade-menu" class="menu">
-    <h2>LEVEL UP!</h2>
-    <button onclick="pick('health')">Health+</button>
-    <button onclick="pick('towers')">Get 2 Towers</button>
-    <button onclick="pick('towerStats')">Tower HP/DMG+</button>
-    <button onclick="pick('blocks')">50 Blocks</button>
-</div>
-
-<div id="ui"></div>
-<canvas id="gameCanvas"></canvas>
+<canvas id="game"></canvas>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const socket = io();
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+    const socket = io();
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-let myId, players = {}, enemies = [], blocks = [], towers = [], projectiles = [], resources = [], rivers = [];
-let camera = { x: 0, y: 0 }, mouse = { x: 0, y: 0 };
+    let players = {}, enemies = [], resources = [], projectiles = [], blocks = [], towers = [];
+    let obstacles = [], rivers = [];
+    let myId = null;
+    let camera = { x: 0, y: 0 };
+    let keys = {};
 
-socket.on('initWorld', d => { rivers = d.rivers; });
-socket.on('serverUpdate', d => {
-    players = d.players; enemies = d.enemies; blocks = d.placedBlocks;
-    towers = d.placedTowers; projectiles = d.projectiles; resources = d.resources;
-});
-
-function startGame() {
-    const name = document.getElementById('nameInput').value || "Guest";
-    socket.emit('joinGame', { name, color: `hsl(${Math.random()*360}, 70%, 50%)` });
-    document.getElementById('start-menu').style.display = 'none';
-    document.getElementById('top-bar').style.display = 'flex';
-}
-
-window.addEventListener('mousemove', e => {
-    mouse.x = e.clientX + camera.x;
-    mouse.y = e.clientY + camera.y;
-});
-
-window.addEventListener('keydown', e => {
-    if(e.key === 't') socket.emit('placeTower', { x: Math.floor(mouse.x/40)*40, y: Math.floor(mouse.y/40)*40 });
-});
-
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    let me = players[socket.id];
-    if (me) {
-        camera.x = me.x - canvas.width/2;
-        camera.y = me.y - canvas.height/2;
+    function join() {
+        const name = document.getElementById('nameInput').value || "Player";
+        socket.emit('joinGame', { name, color: `hsl(${Math.random()*360}, 70%, 50%)` });
+        document.getElementById('start-screen').style.display = 'none';
+        myId = socket.id;
     }
 
-    ctx.save();
-    ctx.translate(-camera.x, -camera.y);
+    window.onkeydown = e => keys[e.key.toLowerCase()] = true;
+    window.onkeyup = e => keys[e.key.toLowerCase()] = false;
+    window.onclick = e => {
+        const worldX = Math.floor((e.clientX + camera.x) / 40) * 40;
+        const worldY = Math.floor((e.clientY + camera.y) / 40) * 40;
+        socket.emit('place', { type: keys['t'] ? 'tower' : 'block', x: worldX, y: worldY });
+    };
 
-    // Draw Rivers
-    ctx.fillStyle = 'rgba(0, 100, 255, 0.3)';
-    rivers.forEach(r => ctx.fillRect(r.x, r.y, r.w, r.h));
-
-    // Draw Resources
-    resources.forEach(res => {
-        ctx.fillStyle = res.type === 'tree' ? '#2d8a30' : '#777';
-        ctx.beginPath(); ctx.arc(res.x, res.y, res.radius, 0, Math.PI*2); ctx.fill();
+    socket.on('initWorld', d => { obstacles = d.obstacles; rivers = d.rivers; });
+    socket.on('serverUpdate', d => {
+        players = d.players; enemies = d.enemies; resources = d.resources;
+        projectiles = d.projectiles; blocks = d.placedBlocks; towers = d.placedTowers;
+        updateUI();
     });
 
-    // Draw Blocks & Towers
-    blocks.forEach(b => { ctx.fillStyle = b.ownerColor; ctx.fillRect(b.x, b.y, b.w, b.h); });
-    towers.forEach(t => { ctx.fillStyle = '#444'; ctx.fillRect(t.x, t.y, t.w, t.h); ctx.fillStyle = t.ownerColor; ctx.beginPath(); ctx.arc(t.x+20, t.y+20, 10, 0, Math.PI*2); ctx.fill(); });
+    function updateUI() {
+        const me = players[socket.id];
+        if (!me) return;
+        document.getElementById('stats').innerText = `Level ${me.level} | XP: ${me.xp} | Blocks: ${me.blocks} | Towers: ${me.towers}`;
+        
+        // Update Team Lists
+        let inviteHTML = "";
+        me.teamRequests.forEach(id => {
+            inviteHTML += `<div>${players[id]?.name || "Unknown"} <button onclick="socket.emit('acceptTeamReq', '${id}')">Accept</button></div>`;
+        });
+        document.getElementById('invites').innerHTML = inviteHTML;
 
-    // Draw Projectiles
-    projectiles.forEach(p => { ctx.fillStyle = 'yellow'; ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI*2); ctx.fill(); });
-
-    // Draw Players
-    for (let id in players) {
-        let p = players[id];
-        ctx.fillStyle = p.color;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 20, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = "white"; ctx.fillText(p.name, p.x - 10, p.y - 30);
+        let nearbyHTML = "";
+        Object.values(players).forEach(p => {
+            if (p.id !== socket.id && !me.team.includes(p.id)) {
+                nearbyHTML += `<div>${p.name} <button onclick="socket.emit('sendTeamReq', '${p.id}')">Invite</button></div>`;
+            }
+        });
+        document.getElementById('nearby').innerHTML = nearbyHTML;
     }
 
-    ctx.restore();
+    function loop() {
+        const me = players[socket.id];
+        if (me) {
+            let speed = 4;
+            // Check River Slowdown
+            rivers.forEach(r => {
+                if (me.x > r.x && me.x < r.x + r.w && me.y > r.y && me.y < r.y + r.h) speed = 1.5;
+            });
 
-    // Minimap
-    if(me) {
-        ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(canvas.width-160, canvas.height-160, 150, 150);
-        ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(canvas.width-160 + (me.x/8000)*150, canvas.height-160 + (me.y/8000)*150, 3, 0, Math.PI*2); ctx.fill();
+            if (keys['w']) me.y -= speed;
+            if (keys['s']) me.y += speed;
+            if (keys['a']) me.x -= speed;
+            if (keys['d']) me.x += speed;
+            socket.emit('playerMoved', { x: me.x, y: me.y });
+            camera.x = me.x - canvas.width/2;
+            camera.y = me.y - canvas.height/2;
+        }
+
+        ctx.clearRect(0,0,canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(-camera.x, -camera.y);
+
+        // Draw Map
+        ctx.fillStyle = '#4455aa'; rivers.forEach(r => ctx.fillRect(r.x, r.y, r.w, r.h));
+        ctx.fillStyle = '#555'; obstacles.forEach(o => ctx.fillRect(o.x, o.y, o.w, o.h));
+        
+        // Draw Assets
+        resources.forEach(r => {
+            ctx.fillStyle = r.type === 'tree' ? '#2ecc71' : '#95a5a6';
+            ctx.beginPath(); ctx.arc(r.x, r.y, r.radius, 0, Math.PI*2); ctx.fill();
+        });
+
+        blocks.forEach(b => { ctx.fillStyle = players[b.ownerId]?.color || '#fff'; ctx.fillRect(b.x, b.y, 40, 40); });
+        towers.forEach(t => { ctx.fillStyle = '#222'; ctx.fillRect(t.x, t.y, 40, 40); });
+        projectiles.forEach(p => { ctx.fillStyle = 'orange'; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill(); });
+
+        // Draw Players
+        Object.values(players).forEach(p => {
+            ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, 20, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = 'white'; ctx.fillText(p.name, p.x-10, p.y-25);
+        });
+
+        ctx.restore();
+
+        // Minimap
+        if (me) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(20, canvas.height - 170, 150, 150);
+            ctx.fillStyle = 'white'; ctx.beginPath(); ctx.arc(20 + (me.x/5000)*150, (canvas.height-170) + (me.y/5000)*150, 3, 0, Math.PI*2); ctx.fill();
+            // Teammates on minimap
+            me.team.forEach(tid => {
+                const mate = players[tid];
+                if (mate) {
+                    ctx.fillStyle = 'cyan'; ctx.beginPath(); ctx.arc(20 + (mate.x/5000)*150, (canvas.height-170) + (mate.y/5000)*150, 2, 0, Math.PI*2); ctx.fill();
+                }
+            });
+        }
+
+        requestAnimationFrame(loop);
     }
-
-    requestAnimationFrame(draw);
-}
-draw();
+    loop();
 </script>
 </body>
 </html>
